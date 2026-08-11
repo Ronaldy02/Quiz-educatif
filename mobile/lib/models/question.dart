@@ -1,6 +1,7 @@
 /// Modèle "Question" du diagramme de classes.
 class Question {
   final int id;
+  final int chapitreId;
   final String enonce;
   final List<String> choix;
   final String bonneReponse;
@@ -9,6 +10,7 @@ class Question {
 
   Question({
     required this.id,
+    required this.chapitreId,
     required this.enonce,
     required this.choix,
     required this.bonneReponse,
@@ -22,6 +24,7 @@ class Question {
   factory Question.fromMap(Map<String, dynamic> map, List<String> choix) {
     return Question(
       id: map['id'] as int,
+      chapitreId: map['chapitre_id'] as int? ?? -1,
       enonce: map['enonce'] as String,
       choix: choix,
       bonneReponse: map['bonne_reponse'] as String,

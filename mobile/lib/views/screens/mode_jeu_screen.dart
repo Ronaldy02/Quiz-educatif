@@ -179,9 +179,10 @@ class ModeJeuScreen extends StatelessWidget {
     );
   }
 
-  void _lancer(BuildContext context, ParametrePartie mode) {
+  Future<void> _lancer(BuildContext context, ParametrePartie mode) async {
     final controller = context.read<QuizController>();
-    final quiz = controller.lancerQuiz(mode);
+    final quiz = await controller.lancerQuiz(mode);
+    if (!context.mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => QuizScreen(quiz: quiz, mode: mode)),
     );

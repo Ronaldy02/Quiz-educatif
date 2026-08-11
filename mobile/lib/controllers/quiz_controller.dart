@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/foundation.dart';
 
 import '../models/carte_mentale.dart';
@@ -10,6 +8,7 @@ import '../models/question.dart';
 import '../models/quiz.dart';
 import '../models/resultat.dart';
 import '../models/utilisateur.dart';
+import '../services/adaptive_selector.dart';
 import '../services/database_helper.dart';
 
 /// Couche "Contrôleur" (MVC) : fait le lien entre les vues et le modèle
@@ -25,6 +24,10 @@ class QuizController extends ChangeNotifier {
   List<Matiere> matieres = [];
   List<Chapitre> chapitres = [];
   Chapitre? dernierChapitre;
+
+  // Mapping chapitreId → matiereId, peuplé quand plusieurs matières sont
+  // dans le pool (choisirTout / choisirThemeSVT).
+  Map<int, int> _chapitreIdVersMatiere = {};
 
   int nombreQuestions = 10;
   static const int _nbQuestionsBombardement = 30;
@@ -142,6 +145,7 @@ class QuizController extends ChangeNotifier {
     final chapitreComplet = await _db.getChapitreComplet(chapitre.id, difficulte: _difficulte);
     utilisateur.choisirChapitre(chapitreComplet);
     dernierChapitre = chapitreComplet;
+    _chapitreIdVersMatiere = {}; // un seul chapitre, pas de multi-matière
     notifyListeners();
     return chapitreComplet;
   }
@@ -164,6 +168,9 @@ class QuizController extends ChangeNotifier {
     );
     utilisateur.choisirChapitre(chapitreTout);
     dernierChapitre = chapitreTout;
+    // Même matière → pas de mapping inter-matières nécessaire.
+    // L'équiprobabilité entre chapitres vient de Question.chapitreId.
+    _chapitreIdVersMatiere = {};
     notifyListeners();
     return chapitreTout;
   }
@@ -173,6 +180,7 @@ class QuizController extends ChangeNotifier {
     const nomsVises = {'Biologie', 'Géologie', 'Astronomie'};
     final toutesQuestions = <Question>[];
     final toutesCartes = <CarteMentale>[];
+    final mapping = <int, int>{};
     for (final matiere in matieres) {
       if (!nomsVises.contains(matiere.nom)) continue;
       final chapitresDeLaMatiere = await _db.getChapitres(matiere.id);
@@ -180,6 +188,7 @@ class QuizController extends ChangeNotifier {
         final complet = await _db.getChapitreComplet(chapitre.id, difficulte: _difficulte);
         toutesQuestions.addAll(complet.questions);
         toutesCartes.addAll(complet.cartesMentales);
+        mapping[chapitre.id] = matiere.id;
       }
     }
     final chapitreVirtuel = Chapitre(
@@ -190,6 +199,7 @@ class QuizController extends ChangeNotifier {
     );
     utilisateur.choisirChapitre(chapitreVirtuel);
     dernierChapitre = chapitreVirtuel;
+    _chapitreIdVersMatiere = mapping;
     notifyListeners();
     return chapitreVirtuel;
   }
@@ -201,17 +211,20 @@ class QuizController extends ChangeNotifier {
       final chapitreTout = Chapitre(id: -1, titre: 'Toutes les matières');
       utilisateur.choisirChapitre(chapitreTout);
       dernierChapitre = chapitreTout;
+      _chapitreIdVersMatiere = {};
       notifyListeners();
       return chapitreTout;
     }
     final toutesQuestions = <Question>[];
     final toutesCartes = <CarteMentale>[];
+    final mapping = <int, int>{};
     for (final matiere in matieres) {
       final chapitresDeLaMatiere = await _db.getChapitres(matiere.id);
       for (final chapitre in chapitresDeLaMatiere) {
         final complet = await _db.getChapitreComplet(chapitre.id, difficulte: _difficulte);
         toutesQuestions.addAll(complet.questions);
         toutesCartes.addAll(complet.cartesMentales);
+        mapping[chapitre.id] = matiere.id;
       }
     }
     final chapitreTout = Chapitre(
@@ -222,6 +235,7 @@ class QuizController extends ChangeNotifier {
     );
     utilisateur.choisirChapitre(chapitreTout);
     dernierChapitre = chapitreTout;
+    _chapitreIdVersMatiere = mapping;
     notifyListeners();
     return chapitreTout;
   }
@@ -232,24 +246,41 @@ class QuizController extends ChangeNotifier {
   }
 
   /// + lancerQuiz(mode : ModeJeu) : Quiz
-  Quiz lancerQuiz(ParametrePartie mode) {
+  Future<Quiz> lancerQuiz(ParametrePartie mode) async {
     final estBombardement = mode.dureeTotale != null;
     final nbCible = estBombardement ? _nbQuestionsBombardement : nombreQuestions;
 
     final chapitre = utilisateur.chapitreSelectionne;
-    if (chapitre != null && chapitre.questions.isNotEmpty) {
-      final questions = List.of(chapitre.questions)..shuffle(Random());
-      final chapitreFiltre = chapitre.copyWith(
-        questions: questions.take(nbCible).toList(),
-      );
-      utilisateur.chapitreSelectionne = chapitreFiltre;
+    if (chapitre == null || chapitre.questions.isEmpty) {
+      // Fallback minimal (ne devrait pas arriver en usage normal).
       final quiz = utilisateur.lancerQuiz(mode);
-      utilisateur.chapitreSelectionne = chapitre;
       _sauvegarderEtat(quiz);
       return quiz;
     }
 
-    final quiz = utilisateur.lancerQuiz(mode);
+    // Charger les stats depuis la DB pour la sélection adaptative.
+    Map<int, QuestionStats> stats = {};
+    if (!kIsWeb) {
+      final ids = chapitre.questions.map((q) => q.id).toList();
+      stats = await _db.getStatsParQuestions(ids);
+    }
+
+    final nbVoulu = nbCible.clamp(1, chapitre.questions.length);
+    final questions = AdaptiveSelector.selectionner(
+      pool: chapitre.questions,
+      chapitreIdVersMatiere: _chapitreIdVersMatiere,
+      stats: stats,
+      nbVoulu: nbVoulu,
+    );
+
+    final quiz = Quiz(
+      id: DateTime.now().millisecondsSinceEpoch,
+      chapitre: chapitre,
+      mode: mode,
+      questions: questions,
+    );
+    quiz.demarrer();
+    utilisateur.quizEnCours = quiz;
     _sauvegarderEtat(quiz);
     return quiz;
   }

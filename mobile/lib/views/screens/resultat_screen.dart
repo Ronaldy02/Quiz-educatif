@@ -335,9 +335,10 @@ class ResultatScreen extends StatelessWidget {
     );
   }
 
-  void _rejouer(BuildContext context) {
+  Future<void> _rejouer(BuildContext context) async {
     final controller = context.read<QuizController>();
-    final quiz = controller.lancerQuiz(mode!);
+    final quiz = await controller.lancerQuiz(mode!);
+    if (!context.mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => QuizScreen(quiz: quiz, mode: mode!)),
     );

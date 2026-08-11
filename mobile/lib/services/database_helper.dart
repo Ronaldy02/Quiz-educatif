@@ -10,6 +10,7 @@ import '../models/chapitre.dart';
 import '../models/matiere.dart';
 import '../models/question.dart';
 import '../models/reponse_enregistree.dart';
+import 'adaptive_selector.dart' show QuestionStats;
 
 class DatabaseHelper {
   DatabaseHelper._();
@@ -29,7 +30,7 @@ class DatabaseHelper {
     final path = kIsWeb ? 'quiz_educatif.db' : join(await getDatabasesPath(), 'quiz_educatif.db');
     return openDatabase(
       path,
-      version: 12,
+      version: 13,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -109,6 +110,13 @@ class DatabaseHelper {
       try {
         await db.execute(
           'ALTER TABLE user_preferences ADD COLUMN pieces_total INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {}
+    }
+    if (oldVersion < 13) {
+      try {
+        await db.execute(
+          'ALTER TABLE statistiques_questions ADD COLUMN last_attempt_at TEXT',
         );
       } catch (_) {}
     }
@@ -194,7 +202,8 @@ class DatabaseHelper {
         question_id INTEGER PRIMARY KEY,
         nb_affichee INTEGER NOT NULL DEFAULT 0,
         nb_correcte INTEGER NOT NULL DEFAULT 0,
-        historique TEXT NOT NULL DEFAULT '[]'
+        historique TEXT NOT NULL DEFAULT '[]',
+        last_attempt_at TEXT
       )
     ''');
     await db.execute('''
@@ -396,12 +405,14 @@ class DatabaseHelper {
       final nbAff = fenetre.length;
       final nbCorr = fenetre.fold(0, (s, v) => s + v);
 
+      final maintenant = DateTime.now().toIso8601String();
       if (existing.isEmpty) {
         await db.insert('statistiques_questions', {
           'question_id': reponse.question.id,
           'nb_affichee': nbAff,
           'nb_correcte': nbCorr,
           'historique': jsonEncode(fenetre),
+          'last_attempt_at': maintenant,
         });
       } else {
         await db.update(
@@ -410,6 +421,7 @@ class DatabaseHelper {
             'nb_affichee': nbAff,
             'nb_correcte': nbCorr,
             'historique': jsonEncode(fenetre),
+            'last_attempt_at': maintenant,
           },
           where: 'question_id = ?',
           whereArgs: [reponse.question.id],
@@ -533,6 +545,36 @@ class DatabaseHelper {
       );
     }
     return db.query('scores', orderBy: 'date DESC', limit: 50);
+  }
+
+  /// Retourne les stats de maîtrise pour une liste de questions.
+  /// Les questions sans entrée ne figurent pas dans le résultat
+  /// (traitées comme "jamais tentées" par l'appelant).
+  Future<Map<int, QuestionStats>> getStatsParQuestions(
+    List<int> ids,
+  ) async {
+    if (ids.isEmpty) return {};
+    final db = await database;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final rows = await db.rawQuery(
+      'SELECT question_id, nb_affichee, nb_correcte, last_attempt_at '
+      'FROM statistiques_questions '
+      'WHERE question_id IN ($placeholders)',
+      ids,
+    );
+    return Map.fromEntries(rows.map((row) {
+      final qid = row['question_id'] as int;
+      final lastAtStr = row['last_attempt_at'] as String?;
+      return MapEntry(
+        qid,
+        QuestionStats(
+          nbAffichee: row['nb_affichee'] as int,
+          nbCorrecte: row['nb_correcte'] as int,
+          derniereTentative:
+              lastAtStr != null ? DateTime.tryParse(lastAtStr) : null,
+        ),
+      );
+    }));
   }
 
   Future<Map<String, int>> getXpPieces() async {
