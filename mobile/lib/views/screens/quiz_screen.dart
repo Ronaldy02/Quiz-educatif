@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../controllers/quiz_controller.dart';
@@ -34,7 +35,7 @@ class QuizScreen extends StatefulWidget {
   State<QuizScreen> createState() => _QuizScreenState();
 }
 
-class _QuizScreenState extends State<QuizScreen> {
+class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   Timer? _timer;
   bool _repondu = false;
   String? _reponseChoisie;
@@ -66,12 +67,39 @@ class _QuizScreenState extends State<QuizScreen> {
   int _seriesPieces = 0; // total coins reçus pendant le quiz (jalons de série)
   OverlayEntry? _overlayEntry;
 
+  // Animations de feedback réponse (Bloc 7)
+  late AnimationController _shakeCtrl;
+  late Animation<double> _shakeAnim;
+  late AnimationController _pulseCtrl;
+  late Animation<double> _pulseAnim;
+
   @override
   void initState() {
     super.initState();
     _melangerChoix();
     _demarrerTimer();
     _chargerPortefeuille();
+    _shakeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 480),
+    );
+    _shakeAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: -10.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: -10.0, end: 10.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 10.0, end: -7.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: -7.0, end: 7.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 7.0, end: -3.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: -3.0, end: 0.0), weight: 1),
+    ]).animate(_shakeCtrl);
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _pulseAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.06), weight: 4),
+      TweenSequenceItem(tween: Tween(begin: 1.06, end: 0.98), weight: 3),
+      TweenSequenceItem(tween: Tween(begin: 0.98, end: 1.0), weight: 3),
+    ]).animate(_pulseCtrl);
   }
 
   Future<void> _chargerPortefeuille() async {
@@ -139,6 +167,8 @@ class _QuizScreenState extends State<QuizScreen> {
           _reponseChoisie = reponse;
           _correcte = correcte;
         });
+        if (correcte) { _pulseCtrl.forward(from: 0); }
+        else if (reponse != null) { _shakeCtrl.forward(from: 0); }
       } else {
         _passerQuestionSuivante();
       }
@@ -163,6 +193,8 @@ class _QuizScreenState extends State<QuizScreen> {
         _reponseChoisie = reponse;
         _correcte = correcte;
       });
+      if (correcte) { _pulseCtrl.forward(from: 0); }
+      else if (reponse != null) { _shakeCtrl.forward(from: 0); }
     } else {
       // Deuxième chance : proposer un 2e essai si acheté et pas encore utilisé
       if (!correcte && _deuxiemeChanceActif && !_estDeuxiemeTentative && reponse != null) {
@@ -171,6 +203,7 @@ class _QuizScreenState extends State<QuizScreen> {
           _reponseChoisie = reponse;
           _correcte = false;
         });
+        _shakeCtrl.forward(from: 0);
       } else {
         _passerQuestionSuivante();
       }
@@ -211,6 +244,8 @@ class _QuizScreenState extends State<QuizScreen> {
       }
     }
 
+    _shakeCtrl.reset();
+    _pulseCtrl.reset();
     controller.questionSuivante(quiz);
     _melangerChoix();
     setState(() {
@@ -414,7 +449,17 @@ class _QuizScreenState extends State<QuizScreen> {
   void dispose() {
     _timer?.cancel();
     _overlayEntry?.remove();
+    _shakeCtrl.dispose();
+    _pulseCtrl.dispose();
     super.dispose();
+  }
+
+  // ─── Chrono critique ──────────────────────────────────────────────────────
+
+  // Rush : seuil 3 s (spec §4), Révision : 5 s, Bombardement : géré globalement.
+  bool _estCritique(int tempsRestant) {
+    if (widget.mode.dureeTotale != null) return false;
+    return tempsRestant <= (widget.mode.nom == 'Rush' ? 3 : 5);
   }
 
   // ─── Jalons de série ──────────────────────────────────────────────────────
@@ -498,7 +543,23 @@ class _QuizScreenState extends State<QuizScreen> {
     final lettres = ['A', 'B', 'C', 'D', 'E', 'F'];
     final peutRepondre = !_repondu && !_enDeuxiemeChance;
 
-    return Scaffold(
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (!peutRepondre) return KeyEventResult.ignored;
+        int? index;
+        if (event.logicalKey == LogicalKeyboardKey.digit1) { index = 0; }
+        else if (event.logicalKey == LogicalKeyboardKey.digit2) { index = 1; }
+        else if (event.logicalKey == LogicalKeyboardKey.digit3) { index = 2; }
+        else if (event.logicalKey == LogicalKeyboardKey.digit4) { index = 3; }
+        if (index != null && index < _choixMelanges.length) {
+          _traiterReponse(_choixMelanges[index]);
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Scaffold(
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
@@ -553,7 +614,7 @@ class _QuizScreenState extends State<QuizScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                         decoration: BoxDecoration(
-                          color: (quiz.tempsRestant <= 5
+                          color: (_estCritique(quiz.tempsRestant)
                                   ? EduCleColors.error
                                   : EduCleColors.primary)
                               .withValues(alpha: 0.12),
@@ -564,7 +625,7 @@ class _QuizScreenState extends State<QuizScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 12,
-                            color: quiz.tempsRestant <= 5
+                            color: _estCritique(quiz.tempsRestant)
                                 ? EduCleColors.error
                                 : EduCleColors.primary,
                           ),
@@ -616,20 +677,30 @@ class _QuizScreenState extends State<QuizScreen> {
               const SizedBox(height: 14),
               // ─── Choix ───────────────────────────────────────────────────
               Expanded(
-                child: ListView.separated(
-                  itemCount: _choixMelanges.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    final choix = _choixMelanges[index];
-                    return _BoutonChoix(
-                      lettre: lettres[index % lettres.length],
-                      texte: choix,
-                      selectionne: _reponseChoisie == choix,
-                      estBonneReponse: choix == question.bonneReponse,
-                      montrerCorrection: _repondu || _enDeuxiemeChance,
-                      onPressed: peutRepondre ? () => _traiterReponse(choix) : null,
-                    );
-                  },
+                child: AnimatedBuilder(
+                  animation: Listenable.merge([_shakeCtrl, _pulseCtrl]),
+                  builder: (_, __) => ListView.separated(
+                    itemCount: _choixMelanges.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final choix = _choixMelanges[index];
+                      final montrerCorr = _repondu || _enDeuxiemeChance;
+                      final estSelectionneWrong =
+                          choix == _reponseChoisie && _correcte == false && montrerCorr;
+                      final estSelectionneOk =
+                          choix == _reponseChoisie && _correcte == true && _repondu;
+                      return _BoutonChoix(
+                        lettre: lettres[index % lettres.length],
+                        texte: choix,
+                        selectionne: _reponseChoisie == choix,
+                        estBonneReponse: choix == question.bonneReponse,
+                        montrerCorrection: montrerCorr,
+                        onPressed: peutRepondre ? () => _traiterReponse(choix) : null,
+                        shakeOffset: estSelectionneWrong ? _shakeAnim.value : 0,
+                        pulseScale: estSelectionneOk ? _pulseAnim.value : 1.0,
+                      );
+                    },
+                  ),
                 ),
               ),
               // ─── Barre bonus ─────────────────────────────────────────────
@@ -772,7 +843,8 @@ class _QuizScreenState extends State<QuizScreen> {
           ),
         ),
       ),
-    );
+    ),  // Scaffold
+    );  // Focus
   }
 }
 
@@ -1015,6 +1087,8 @@ class _BoutonChoix extends StatelessWidget {
   final bool estBonneReponse;
   final bool montrerCorrection;
   final VoidCallback? onPressed;
+  final double shakeOffset;
+  final double pulseScale;
 
   const _BoutonChoix({
     required this.lettre,
@@ -1023,6 +1097,8 @@ class _BoutonChoix extends StatelessWidget {
     required this.estBonneReponse,
     required this.montrerCorrection,
     required this.onPressed,
+    this.shakeOffset = 0,
+    this.pulseScale = 1.0,
   });
 
   @override
@@ -1046,7 +1122,11 @@ class _BoutonChoix extends StatelessWidget {
       couleurLettre = EduCleColors.primary;
     }
 
-    return Material(
+    return Transform.translate(
+      offset: Offset(shakeOffset, 0),
+      child: Transform.scale(
+        scale: pulseScale,
+        child: Material(
       color: fond,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
@@ -1088,6 +1168,8 @@ class _BoutonChoix extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ),    // Material
+    ),    // Transform.scale
+    );    // Transform.translate
   }
 }
