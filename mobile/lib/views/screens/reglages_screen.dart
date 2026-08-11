@@ -314,6 +314,12 @@ class ReglagesScreen extends StatelessWidget {
             ),
             const SizedBox(height: 28),
 
+            // ── Portefeuille ─────────────────────────────────────────────
+            const _SectionTitre(titre: 'Mon portefeuille'),
+            const SizedBox(height: 12),
+            const _PortefeuilleCard(),
+            const SizedBox(height: 28),
+
             // ── À propos ─────────────────────────────────────────────────
             const _SectionTitre(titre: 'À propos'),
             const SizedBox(height: 12),
@@ -341,6 +347,111 @@ class ReglagesScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ─── Portefeuille XP / pièces ─────────────────────────────────────────────────
+
+class _PortefeuilleCard extends StatefulWidget {
+  const _PortefeuilleCard();
+
+  @override
+  State<_PortefeuilleCard> createState() => _PortefeuilleCardState();
+}
+
+class _PortefeuilleCardState extends State<_PortefeuilleCard> {
+  int _xp = 0;
+  int _pieces = 0;
+  bool _charge = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _charger();
+  }
+
+  Future<void> _charger() async {
+    final data = await context.read<QuizController>().getXpPieces();
+    if (mounted) {
+      setState(() {
+        _xp = data['xp'] ?? 0;
+        _pieces = data['pieces'] ?? 0;
+        _charge = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_charge) {
+      return const _CarteReglage(
+        child: Center(child: SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+      );
+    }
+    return _CarteReglage(
+      child: Row(
+        children: [
+          Expanded(
+            child: _StatPortefeuille(
+              emoji: '⭐',
+              label: 'XP total',
+              valeur: _xp,
+              couleur: const Color(0xFFB45309),
+            ),
+          ),
+          Container(width: 1, height: 48, color: EduCleColors.border),
+          Expanded(
+            child: _StatPortefeuille(
+              emoji: '🪙',
+              label: 'Pièces',
+              valeur: _pieces,
+              couleur: const Color(0xFF0284C7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatPortefeuille extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final int valeur;
+  final Color couleur;
+
+  const _StatPortefeuille({
+    required this.emoji,
+    required this.label,
+    required this.valeur,
+    required this.couleur,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(emoji, style: const TextStyle(fontSize: 24)),
+        const SizedBox(height: 4),
+        Text(
+          valeur.toString(),
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: couleur,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: EduCleColors.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }

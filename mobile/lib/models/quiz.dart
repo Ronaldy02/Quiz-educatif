@@ -18,6 +18,7 @@ class Quiz {
   final List<Question> reponsesIncorrectes;
   final List<ReponseEnregistree> historique;
   bool termine;
+  bool multiplicateurScoreActif; // bonus 🎯 ×1.5 score
 
   Quiz({
     required this.id,
@@ -31,6 +32,7 @@ class Quiz {
     List<Question>? reponsesIncorrectes,
     List<ReponseEnregistree>? historique,
     this.termine = false,
+    this.multiplicateurScoreActif = false,
   }) : tempsRestant = tempsRestant ?? mode.dureeTotale ?? mode.tempsParQuestion,
        reponsesCorrectes = reponsesCorrectes ?? [],
        reponsesIncorrectes = reponsesIncorrectes ?? [],
@@ -122,8 +124,10 @@ class Quiz {
 
   /// + afficherRésultat() : Résultat
   Resultat afficherResultat() {
+    final scoreEffectif = multiplicateurScoreActif ? (score * 1.5).round() : score;
     return Resultat(
-      score: score,
+      score: scoreEffectif,
+      scoreBase: score,
       total: questions.length,
       reponsesCorrectes: reponsesCorrectes,
       reponsesIncorrectes: reponsesIncorrectes,

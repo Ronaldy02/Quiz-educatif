@@ -19,6 +19,7 @@ class ResultatScreen extends StatelessWidget {
   final int piecesGagnees;
   final bool doubleXpActif;
   final bool doublePiecesActif;
+  final bool multiplicateurActif;
 
   const ResultatScreen({
     super.key,
@@ -29,6 +30,7 @@ class ResultatScreen extends StatelessWidget {
     this.piecesGagnees = 0,
     this.doubleXpActif = false,
     this.doublePiecesActif = false,
+    this.multiplicateurActif = false,
   });
 
   String _messageSelonScore() {
@@ -141,6 +143,18 @@ class ResultatScreen extends StatelessWidget {
                 fontSize: 14,
               ),
             ),
+            if (multiplicateurActif && resultat.scoreBase != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '🎯 ×1,5 score appliqué (base : ${resultat.scoreBase} pts)',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFFB45309),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
             if (sousTitreParties.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
