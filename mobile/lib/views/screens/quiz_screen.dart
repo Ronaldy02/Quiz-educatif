@@ -7,7 +7,9 @@ import 'package:provider/provider.dart';
 import '../../controllers/quiz_controller.dart';
 import '../../models/parametre_partie.dart';
 import '../../models/quiz.dart';
+import '../../services/database_helper.dart';
 import '../../services/haptic_service.dart';
+import '../../services/realisation_service.dart';
 import '../../services/sound_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/milestone_overlay.dart';
@@ -58,6 +60,7 @@ class _QuizScreenState extends State<QuizScreen> {
 
   // Série (Rush/Révision uniquement — spec §18 résumé)
   int _serie = 0;
+  int _serieMax = 0; // plus longue série atteinte dans ce quiz (pour réalisations)
   final Set<int> _paliersSerie = {};
   bool _questionsCorrecteCourante = false;
   int _seriesPieces = 0; // total coins reçus pendant le quiz (jalons de série)
@@ -201,6 +204,7 @@ class _QuizScreenState extends State<QuizScreen> {
     if (!estBombardement) {
       if (_questionsCorrecteCourante) {
         _serie++;
+        if (_serie > _serieMax) _serieMax = _serie;
         unawaited(_verifierMilestoneSerie());
       } else {
         _serie = 0;
@@ -261,6 +265,23 @@ class _QuizScreenState extends State<QuizScreen> {
       unawaited(SoundService.perfect());
     }
 
+    // Vérification et déblocage des réalisations.
+    final xpPieces = await controller.getXpPieces();
+    final db = await DatabaseHelper.instance.database;
+    final realisationsDebloquees = await RealisationService.verifierApresQuiz(
+      db: db,
+      modeNom: widget.mode.nom,
+      nbCorrectesCettePartie: resultat.reponsesCorrectes.length,
+      estPerfect: estPerfect,
+      scoreBombardement: estBombardement ? resultat.reponsesCorrectes.length : 0,
+      serieMax: _serieMax,
+      xpTotal: xpPieces['xp'] ?? 0,
+      piecesTotal: xpPieces['pieces'] ?? 0,
+      subjectId: widget.quiz.chapitre.questions.isNotEmpty
+          ? null // le subjectId viendra via le mapping quand nécessaire
+          : null,
+    );
+
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -276,6 +297,7 @@ class _QuizScreenState extends State<QuizScreen> {
           palierBombardement: palierBombardement,
           estPerfect: estPerfect,
           seriesPieces: _seriesPieces,
+          realisationsDebloquees: realisationsDebloquees,
         ),
       ),
     );

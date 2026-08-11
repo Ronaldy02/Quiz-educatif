@@ -11,6 +11,7 @@ import 'classement_screen.dart';
 import 'mode_jeu_screen.dart';
 import 'onboarding_screen.dart';
 import 'quiz_screen.dart';
+import 'realisations_screen.dart';
 import 'reglages_screen.dart';
 import 'stats_screen.dart';
 
@@ -62,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             onSettings: () => _afficherReglages(context),
                             onStats: () => _afficherStats(context),
                             onClassement: () => _afficherClassement(context),
+                            onRealisations: () => _afficherRealisations(context),
                           ),
                           const SizedBox(height: 20),
                           _BanniereHero(
@@ -214,17 +216,25 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(builder: (_) => const ClassementScreen()),
     );
   }
+
+  void _afficherRealisations(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const RealisationsScreen()),
+    );
+  }
 }
 
 class _Header extends StatelessWidget {
   final VoidCallback onSettings;
   final VoidCallback onStats;
   final VoidCallback onClassement;
+  final VoidCallback onRealisations;
 
   const _Header({
     required this.onSettings,
     required this.onStats,
     required this.onClassement,
+    required this.onRealisations,
   });
 
   @override
@@ -237,6 +247,12 @@ class _Header extends StatelessWidget {
           icone: Icons.query_stats_rounded,
           onTap: onStats,
           tooltip: 'Statistiques',
+        ),
+        const SizedBox(width: 8),
+        _IconeBouton(
+          icone: Icons.military_tech_rounded,
+          onTap: onRealisations,
+          tooltip: 'Réalisations',
         ),
         const SizedBox(width: 8),
         _IconeBouton(

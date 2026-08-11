@@ -30,7 +30,7 @@ class DatabaseHelper {
     final path = kIsWeb ? 'quiz_educatif.db' : join(await getDatabasesPath(), 'quiz_educatif.db');
     return openDatabase(
       path,
-      version: 15,
+      version: 16,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -147,6 +147,9 @@ class DatabaseHelper {
         )
       ''');
     }
+    if (oldVersion < 16) {
+      await _createRealisationTables(db);
+    }
   }
 
   Future<void> _reseedAll(Database db) async {
@@ -252,6 +255,32 @@ class DatabaseHelper {
         annee TEXT NOT NULL DEFAULT '7e AF',
         xp_total INTEGER NOT NULL DEFAULT 0,
         pieces_total INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await _createRealisationTables(db);
+  }
+
+  Future<void> _createRealisationTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS realisations (
+        id TEXT PRIMARY KEY,
+        nom TEXT NOT NULL,
+        description TEXT NOT NULL,
+        categorie INTEGER NOT NULL,
+        rarete INTEGER NOT NULL,
+        objectif INTEGER NOT NULL DEFAULT 0,
+        recompense_pieces INTEGER NOT NULL DEFAULT 0,
+        secret INTEGER NOT NULL DEFAULT 0,
+        progres INTEGER NOT NULL DEFAULT 0,
+        debloquee INTEGER NOT NULL DEFAULT 0,
+        debloquee_at TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS realisation_stats (
+        cle TEXT PRIMARY KEY,
+        valeur_int INTEGER NOT NULL DEFAULT 0,
+        valeur_text TEXT
       )
     ''');
   }

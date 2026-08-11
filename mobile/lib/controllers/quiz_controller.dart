@@ -10,6 +10,7 @@ import '../models/resultat.dart';
 import '../models/utilisateur.dart';
 import '../services/adaptive_selector.dart';
 import '../services/database_helper.dart';
+import '../services/realisation_service.dart';
 
 /// Couche "Contrôleur" (MVC) : fait le lien entre les vues et le modèle
 /// (Utilisateur, Quiz...), orchestre les actions utilisateur (sélection,
@@ -69,6 +70,8 @@ class QuizController extends ChangeNotifier {
         matieres = await _db.getMatieresByCycle(_niveauScolaire);
         final quizSauvegarde = await _db.getQuizEnCours();
         quizEnCoursDisponible = quizSauvegarde != null;
+        final db = await _db.database;
+        await RealisationService.initialiser(db);
       }
     } catch (_) {}
     chargement = false;

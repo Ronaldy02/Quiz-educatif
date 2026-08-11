@@ -4,14 +4,16 @@ import 'package:provider/provider.dart';
 import '../../controllers/quiz_controller.dart';
 import '../../models/chapitre.dart';
 import '../../models/parametre_partie.dart';
+import '../../models/realisation.dart';
 import '../../models/resultat.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/realisation_unlock_overlay.dart';
 import '../widgets/educle_logo.dart';
 import 'home_screen.dart';
 import 'quiz_screen.dart';
 import 'revision_reponses_screen.dart';
 
-class ResultatScreen extends StatelessWidget {
+class ResultatScreen extends StatefulWidget {
   final Resultat resultat;
   final Chapitre? chapitre;
   final ParametrePartie? mode;
@@ -26,6 +28,8 @@ class ResultatScreen extends StatelessWidget {
   final bool estPerfect;
   // Total des pièces reçues via les jalons de série pendant le quiz (spec §3-6).
   final int seriesPieces;
+  // Réalisations nouvellement débloquées pendant ce quiz.
+  final List<Realisation> realisationsDebloquees;
 
   const ResultatScreen({
     super.key,
@@ -40,20 +44,63 @@ class ResultatScreen extends StatelessWidget {
     this.palierBombardement = 0,
     this.estPerfect = false,
     this.seriesPieces = 0,
+    this.realisationsDebloquees = const [],
   });
 
+  @override
+  State<ResultatScreen> createState() => _ResultatScreenState();
+}
+
+class _ResultatScreenState extends State<ResultatScreen> {
+  OverlayEntry? _overlayEntry;
+  int _overlayIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.realisationsDebloquees.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _montrerProchainOverlay());
+    }
+  }
+
+  @override
+  void dispose() {
+    _overlayEntry?.remove();
+    super.dispose();
+  }
+
+  void _montrerProchainOverlay() {
+    if (_overlayIndex >= widget.realisationsDebloquees.length) return;
+    final r = widget.realisationsDebloquees[_overlayIndex];
+
+    _overlayEntry = OverlayEntry(
+      builder: (_) => IgnorePointer(
+        child: RealisationUnlockOverlay(
+          realisation: r,
+          onDismissed: () {
+            _overlayEntry?.remove();
+            _overlayEntry = null;
+            _overlayIndex++;
+            if (mounted) _montrerProchainOverlay();
+          },
+        ),
+      ),
+    );
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
   String _messageSelonScore() {
-    if (estPerfect) return 'Quiz parfait ! Toutes les réponses sont correctes.';
-    if (mode?.nom == 'Bombardement') {
-      final nb = resultat.historique.length;
+    if (widget.estPerfect) return 'Quiz parfait ! Toutes les réponses sont correctes.';
+    if (widget.mode?.nom == 'Bombardement') {
+      final nb = widget.resultat.historique.length;
       if (nb >= 10) return 'Incroyable, tu voles !';
       if (nb >= 7) return 'Excellent score sous pression !';
       if (nb >= 4) return 'Bien joué, continue à t\'entraîner.';
       return 'La prochaine fois, tu iras plus vite !';
     }
-    if (resultat.total == 0) return 'Quiz terminé !';
-    final ratio = resultat.reponsesCorrectes.length / resultat.total;
-    if (mode?.nom == 'Rush') {
+    if (widget.resultat.total == 0) return 'Quiz terminé !';
+    final ratio = widget.resultat.reponsesCorrectes.length / widget.resultat.total;
+    if (widget.mode?.nom == 'Rush') {
       if (ratio >= 0.8) return 'Excellent ! Tu es rapide et précis.';
       if (ratio >= 0.6) return 'Bien joué ! Encore un peu de vitesse.';
       if (ratio >= 0.4) return 'Pas mal, continue à t\'entraîner.';
@@ -68,6 +115,19 @@ class ResultatScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Alias locaux pour garder le reste du build lisible
+    final resultat = widget.resultat;
+    final mode = widget.mode;
+    final estPerfect = widget.estPerfect;
+    final palierBombardement = widget.palierBombardement;
+    final seriesPieces = widget.seriesPieces;
+    final xpGagne = widget.xpGagne;
+    final piecesGagnees = widget.piecesGagnees;
+    final doubleXpActif = widget.doubleXpActif;
+    final doublePiecesActif = widget.doublePiecesActif;
+    final multiplicateurActif = widget.multiplicateurActif;
+
+    final chapitre = widget.chapitre;
     final matiereNom = context
         .read<QuizController>()
         .utilisateur
@@ -75,7 +135,7 @@ class ResultatScreen extends StatelessWidget {
         ?.nom;
     final sousTitreParties = [
       if (matiereNom != null) matiereNom,
-      if (mode != null) mode!.nom,
+      if (mode != null) mode.nom,
     ].join(' · ');
 
     final isBombardement = mode?.nom == 'Bombardement';
@@ -429,10 +489,12 @@ class ResultatScreen extends StatelessWidget {
 
   Future<void> _rejouer(BuildContext context) async {
     final controller = context.read<QuizController>();
-    final quiz = await controller.lancerQuiz(mode!);
+    final quiz = await controller.lancerQuiz(widget.mode!);
     if (!context.mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => QuizScreen(quiz: quiz, mode: mode!)),
+      MaterialPageRoute(
+        builder: (_) => QuizScreen(quiz: quiz, mode: widget.mode!),
+      ),
     );
   }
 }
