@@ -286,8 +286,8 @@ class QuizController extends ChangeNotifier {
   }
 
   /// + répondre(question : Question, réponse : string) : bool
-  bool repondre(Quiz quiz, Question question, String reponse, int tempsRestantAuClic) {
-    final correcte = quiz.repondre(question, reponse, tempsRestantAuClic);
+  bool repondre(Quiz quiz, Question question, String reponse, int tempsRestantAuClic, {String? bonusUtilise}) {
+    final correcte = quiz.repondre(question, reponse, tempsRestantAuClic, bonusUtilise: bonusUtilise);
     _sauvegarderEtat(quiz);
     return correcte;
   }
@@ -339,6 +339,16 @@ class QuizController extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> getScores({int? matiereId}) async {
     if (kIsWeb) return [];
     return _db.getScores(matiereId: matiereId);
+  }
+
+  Future<Map<String, int>> getXpPieces() async {
+    if (kIsWeb) return {'xp': 0, 'pieces': 0};
+    return _db.getXpPieces();
+  }
+
+  Future<void> ajouterXpPieces(int xp, int pieces) async {
+    if (kIsWeb) return;
+    await _db.ajouterXpPieces(xp, pieces);
   }
 
   Future<void> _sauvegarderEtat(Quiz quiz) async {

@@ -29,7 +29,7 @@ class DatabaseHelper {
     final path = kIsWeb ? 'quiz_educatif.db' : join(await getDatabasesPath(), 'quiz_educatif.db');
     return openDatabase(
       path,
-      version: 11,
+      version: 12,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -99,6 +99,18 @@ class DatabaseHelper {
       } catch (_) {}
       // Réinitialise les stats pour que historique reste cohérent avec les compteurs.
       await db.delete('statistiques_questions');
+    }
+    if (oldVersion < 12) {
+      try {
+        await db.execute(
+          'ALTER TABLE user_preferences ADD COLUMN xp_total INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE user_preferences ADD COLUMN pieces_total INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {}
     }
   }
 
@@ -201,7 +213,9 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY,
         zone TEXT NOT NULL DEFAULT '',
         niveau_scolaire TEXT NOT NULL DEFAULT 'Fondamental',
-        annee TEXT NOT NULL DEFAULT '7e AF'
+        annee TEXT NOT NULL DEFAULT '7e AF',
+        xp_total INTEGER NOT NULL DEFAULT 0,
+        pieces_total INTEGER NOT NULL DEFAULT 0
       )
     ''');
   }
@@ -519,6 +533,26 @@ class DatabaseHelper {
       );
     }
     return db.query('scores', orderBy: 'date DESC', limit: 50);
+  }
+
+  Future<Map<String, int>> getXpPieces() async {
+    final db = await database;
+    await _ensurePrefsRow(db);
+    final rows = await db.query('user_preferences', where: 'id = 1');
+    if (rows.isEmpty) return {'xp': 0, 'pieces': 0};
+    return {
+      'xp': (rows.first['xp_total'] as int?) ?? 0,
+      'pieces': (rows.first['pieces_total'] as int?) ?? 0,
+    };
+  }
+
+  Future<void> ajouterXpPieces(int xp, int pieces) async {
+    final db = await database;
+    await _ensurePrefsRow(db);
+    await db.rawUpdate(
+      'UPDATE user_preferences SET xp_total = xp_total + ?, pieces_total = pieces_total + ? WHERE id = 1',
+      [xp, pieces],
+    );
   }
 
   Future<String> getZone() async {

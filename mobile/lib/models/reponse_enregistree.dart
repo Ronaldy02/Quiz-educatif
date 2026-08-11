@@ -7,11 +7,13 @@ class ReponseEnregistree {
   final String reponseUtilisateur;
   final bool correcte;
   final int tempsUtilise; // secondes utilisées pour répondre
+  final String? bonusUtilise; // ex: 'second_chance', null si aucun
 
   ReponseEnregistree({
     required this.question,
     required this.reponseUtilisateur,
     required this.correcte,
     this.tempsUtilise = 0,
+    this.bonusUtilise,
   });
 }

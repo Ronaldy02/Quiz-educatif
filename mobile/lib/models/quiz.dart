@@ -62,14 +62,16 @@ class Quiz {
 
   /// + répondre(question : Question, réponse : string) : bool
   /// [tempsRestantAuClic] est le temps restant au moment où le joueur a répondu.
-  bool repondre(Question question, String reponse, int tempsRestantAuClic) {
+  /// [bonusUtilise] peut être 'second_chance' pour une deuxième tentative.
+  bool repondre(Question question, String reponse, int tempsRestantAuClic, {String? bonusUtilise}) {
     final correcte = question.verifierReponse(reponse);
     if (correcte) {
       final estBombardement = mode.dureeTotale != null;
       final diff = _difficulteMultiplier(question.niveauComplexite);
       final base = (10 * mode.multiplicateurScore * diff).round();
       int bonus = 0;
-      if (!estBombardement && mode.tempsParQuestion > 0) {
+      // Pas de bonus de vitesse pour les deuxièmes tentatives
+      if (!estBombardement && mode.tempsParQuestion > 0 && bonusUtilise != 'second_chance') {
         bonus = (tempsRestantAuClic / mode.tempsParQuestion * 10).round().clamp(0, 10);
       }
       score += base + bonus;
@@ -82,12 +84,19 @@ class Quiz {
         question: question,
         reponseUtilisateur: reponse,
         correcte: correcte,
+        bonusUtilise: bonusUtilise,
         tempsUtilise: mode.dureeTotale != null
             ? 0
             : mode.tempsParQuestion - tempsRestantAuClic,
       ),
     );
     return correcte;
+  }
+
+  /// Retire la dernière entrée incorrecte pour une question donnée.
+  /// Utilisé quand la deuxième tentative est correcte.
+  void retirerDerniereErreur(Question question) {
+    reponsesIncorrectes.remove(question);
   }
 
   void passerQuestionSuivante() {

@@ -15,12 +15,20 @@ class ResultatScreen extends StatelessWidget {
   final Resultat resultat;
   final Chapitre? chapitre;
   final ParametrePartie? mode;
+  final int xpGagne;
+  final int piecesGagnees;
+  final bool doubleXpActif;
+  final bool doublePiecesActif;
 
   const ResultatScreen({
     super.key,
     required this.resultat,
     this.chapitre,
     this.mode,
+    this.xpGagne = 0,
+    this.piecesGagnees = 0,
+    this.doubleXpActif = false,
+    this.doublePiecesActif = false,
   });
 
   String _messageSelonScore() {
@@ -141,6 +149,69 @@ class ResultatScreen extends StatelessWidget {
                 style: const TextStyle(
                   color: EduCleColors.textSecondary,
                   fontSize: 12,
+                ),
+              ),
+            ],
+            // ─── Récompenses XP / pièces ─────────────────────────────────
+            if (xpGagne > 0 || piecesGagnees > 0) ...[
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: EduCleColors.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: EduCleColors.border),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (xpGagne > 0) ...[
+                      Text(
+                        '⭐ +$xpGagne XP',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          color: Color(0xFFB45309),
+                        ),
+                      ),
+                      if (doubleXpActif)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 4),
+                          child: Text(
+                            '×2',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFB45309),
+                            ),
+                          ),
+                        ),
+                    ],
+                    if (xpGagne > 0 && piecesGagnees > 0)
+                      const SizedBox(width: 20),
+                    if (piecesGagnees > 0) ...[
+                      Text(
+                        '🪙 +$piecesGagnees',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          color: Color(0xFF0284C7),
+                        ),
+                      ),
+                      if (doublePiecesActif)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 4),
+                          child: Text(
+                            '×2',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0284C7),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ],
                 ),
               ),
             ],

@@ -28,6 +28,18 @@ class _QuizScreenState extends State<QuizScreen> {
   bool _termine = false;
   List<String> _choixMelanges = [];
 
+  // Bonus availability (une fois par quiz)
+  bool _eliminationDispo = true;
+  bool _cinqCinquanteDispo = true;
+  bool _tempsDispo = true;
+  bool _deuxiemeChanceDispo = true;
+  bool _doubleXpActif = false;
+  bool _doublePiecesActif = false;
+
+  // État deuxième chance
+  bool _enDeuxiemeChance = false;
+  bool _estDeuxiemeTentative = false;
+
   @override
   void initState() {
     super.initState();
@@ -59,17 +71,45 @@ class _QuizScreenState extends State<QuizScreen> {
     if (modeGlobal) {
       widget.quiz.forcerFin();
       _finir();
+    } else if (_enDeuxiemeChance) {
+      // Temps écoulé pendant la proposition de deuxième chance → passer
+      setState(() => _enDeuxiemeChance = false);
+      _passerQuestionSuivante();
     } else if (!_repondu) {
       _traiterReponse(null);
     }
   }
 
   void _traiterReponse(String? reponse) {
-    if (_repondu) return;
+    if (_repondu && !_estDeuxiemeTentative) return;
+    if (_enDeuxiemeChance) return; // Boutons overlay gèrent ça
+
     final controller = context.read<QuizController>();
     final quiz = widget.quiz;
     final question = quiz.questionCourante;
     if (question == null) return;
+
+    if (_estDeuxiemeTentative) {
+      // Deuxième tentative : tempsRestant = 0 (pas de bonus vitesse)
+      final correcte = controller.repondre(
+        quiz, question, reponse ?? '', 0,
+        bonusUtilise: 'second_chance',
+      );
+      if (correcte) {
+        quiz.retirerDerniereErreur(question);
+      }
+      _estDeuxiemeTentative = false;
+      if (widget.mode.feedbackImmediat) {
+        setState(() {
+          _repondu = true;
+          _reponseChoisie = reponse;
+          _correcte = correcte;
+        });
+      } else {
+        _passerQuestionSuivante();
+      }
+      return;
+    }
 
     final tempsRestantAuClic = quiz.tempsRestant;
     final correcte = controller.repondre(quiz, question, reponse ?? '', tempsRestantAuClic);
@@ -81,8 +121,32 @@ class _QuizScreenState extends State<QuizScreen> {
         _correcte = correcte;
       });
     } else {
-      _passerQuestionSuivante();
+      // En mode Rush/Bombardement, offrir deuxième chance après une erreur
+      if (!correcte && _deuxiemeChanceDispo && reponse != null) {
+        setState(() {
+          _enDeuxiemeChance = true;
+          _deuxiemeChanceDispo = false;
+          _reponseChoisie = reponse;
+          _correcte = false;
+        });
+      } else {
+        _passerQuestionSuivante();
+      }
     }
+  }
+
+  void _accepterDeuxiemeChance() {
+    setState(() {
+      _enDeuxiemeChance = false;
+      _estDeuxiemeTentative = true;
+      _reponseChoisie = null;
+      _correcte = null;
+    });
+  }
+
+  void _refuserDeuxiemeChance() {
+    setState(() => _enDeuxiemeChance = false);
+    _passerQuestionSuivante();
   }
 
   void _passerQuestionSuivante() {
@@ -94,6 +158,8 @@ class _QuizScreenState extends State<QuizScreen> {
       _repondu = false;
       _reponseChoisie = null;
       _correcte = null;
+      _enDeuxiemeChance = false;
+      _estDeuxiemeTentative = false;
     });
     if (quiz.termine) {
       _finir();
@@ -106,6 +172,14 @@ class _QuizScreenState extends State<QuizScreen> {
     _timer?.cancel();
     final controller = context.read<QuizController>();
     final resultat = await controller.terminerQuiz(widget.quiz);
+
+    final nbCorrectes = resultat.reponsesCorrectes.length;
+    final xpGagne = nbCorrectes * 10 * (_doubleXpActif ? 2 : 1);
+    final piecesGagnees = nbCorrectes * 5 * (_doublePiecesActif ? 2 : 1);
+    if (xpGagne > 0 || piecesGagnees > 0) {
+      await controller.ajouterXpPieces(xpGagne, piecesGagnees);
+    }
+
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -113,6 +187,10 @@ class _QuizScreenState extends State<QuizScreen> {
           resultat: resultat,
           chapitre: widget.quiz.chapitre,
           mode: widget.mode,
+          xpGagne: xpGagne,
+          piecesGagnees: piecesGagnees,
+          doubleXpActif: _doubleXpActif,
+          doublePiecesActif: _doublePiecesActif,
         ),
       ),
     );
@@ -141,6 +219,48 @@ class _QuizScreenState extends State<QuizScreen> {
     }
   }
 
+  // ─── Bonus actions ───────────────────────────────────────────────────────────
+
+  void _utiliserElimination() {
+    final bonneReponse = widget.quiz.questionCourante?.bonneReponse;
+    if (bonneReponse == null) return;
+    final mauvaises = _choixMelanges.where((c) => c != bonneReponse).toList()..shuffle();
+    if (mauvaises.isEmpty) return;
+    setState(() {
+      _choixMelanges.remove(mauvaises.first);
+      _eliminationDispo = false;
+      // 50/50 inutile s'il ne reste qu'un mauvais choix
+      if (_choixMelanges.length <= 2) _cinqCinquanteDispo = false;
+    });
+  }
+
+  void _utiliserCinqCinquante() {
+    final bonneReponse = widget.quiz.questionCourante?.bonneReponse;
+    if (bonneReponse == null) return;
+    final mauvaises = _choixMelanges.where((c) => c != bonneReponse).toList()..shuffle();
+    if (mauvaises.isEmpty) return;
+    setState(() {
+      _choixMelanges = [bonneReponse, mauvaises.first]..shuffle();
+      _cinqCinquanteDispo = false;
+      _eliminationDispo = false;
+    });
+  }
+
+  void _utiliserTemps() {
+    setState(() {
+      widget.quiz.tempsRestant += 10;
+      _tempsDispo = false;
+    });
+  }
+
+  void _activerDoubleXp() {
+    setState(() => _doubleXpActif = !_doubleXpActif);
+  }
+
+  void _activerDoublePieces() {
+    setState(() => _doublePiecesActif = !_doublePiecesActif);
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
@@ -162,6 +282,7 @@ class _QuizScreenState extends State<QuizScreen> {
         ? null
         : (quiz.indexCourant + 1) / quiz.questions.length;
     final lettres = ['A', 'B', 'C', 'D', 'E', 'F'];
+    final peutRepondre = !_repondu && !_enDeuxiemeChance;
 
     return Scaffold(
       body: SafeArea(
@@ -170,6 +291,7 @@ class _QuizScreenState extends State<QuizScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // ─── En-tête ────────────────────────────────────────────────────
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -248,7 +370,7 @@ class _QuizScreenState extends State<QuizScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               Wrap(
                 spacing: 8,
                 children: [
@@ -257,33 +379,106 @@ class _QuizScreenState extends State<QuizScreen> {
                     _Badge(texte: utilisateur.niveau!, claire: true),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               Text(
                 question.enonce,
                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+              // ─── Choix ──────────────────────────────────────────────────────
               Expanded(
                 child: ListView.separated(
                   itemCount: _choixMelanges.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final choix = _choixMelanges[index];
+                    // En état deuxième chance, montrer la mauvaise sélection
+                    final montrerErreur = _enDeuxiemeChance;
                     return _BoutonChoix(
                       lettre: lettres[index % lettres.length],
                       texte: choix,
                       selectionne: _reponseChoisie == choix,
                       estBonneReponse: choix == question.bonneReponse,
-                      montrerCorrection: _repondu,
-                      onPressed: _repondu ? null : () => _traiterReponse(choix),
+                      montrerCorrection: _repondu || montrerErreur,
+                      onPressed: peutRepondre ? () => _traiterReponse(choix) : null,
                     );
                   },
                 ),
               ),
-              if (_repondu && widget.mode.feedbackImmediat) ...[
-                const SizedBox(height: 12),
+              // ─── Barre bonus ─────────────────────────────────────────────
+              _BonusBarre(
+                eliminationDispo: _eliminationDispo && peutRepondre && _choixMelanges.length > 2,
+                cinqCinquanteDispo: _cinqCinquanteDispo && peutRepondre && _choixMelanges.length > 2,
+                tempsDispo: _tempsDispo && peutRepondre,
+                deuxiemeChanceDispo: _deuxiemeChanceDispo,
+                doubleXpActif: _doubleXpActif,
+                doublePiecesActif: _doublePiecesActif,
+                onElimination: peutRepondre ? _utiliserElimination : null,
+                onCinqCinquante: peutRepondre ? _utiliserCinqCinquante : null,
+                onTemps: peutRepondre ? _utiliserTemps : null,
+                onDoubleXp: _activerDoubleXp,
+                onDoublePieces: _activerDoublePieces,
+              ),
+              // ─── Deuxième chance overlay (Rush / Bombardement) ────────────
+              if (_enDeuxiemeChance) ...[
+                const SizedBox(height: 10),
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF8E1),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFFFC107)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '🔄 Deuxième chance !',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFFB45309),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Mauvaise réponse. Tu peux réessayer une fois.',
+                        style: TextStyle(fontSize: 13, color: Color(0xFF92400E)),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFF59E0B),
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: _accepterDeuxiemeChance,
+                              child: const Text('Réessayer'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: EduCleColors.textSecondary,
+                                side: const BorderSide(color: EduCleColors.border),
+                              ),
+                              onPressed: _refuserDeuxiemeChance,
+                              child: const Text('Passer'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              // ─── Feedback Révision ────────────────────────────────────────
+              if (_repondu && widget.mode.feedbackImmediat) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: (_correcte ?? false)
                         ? EduCleColors.successBg
@@ -314,10 +509,38 @@ class _QuizScreenState extends State<QuizScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: _passerQuestionSuivante,
-                  child: const Text('Suivant'),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    // Deuxième chance disponible après erreur en Révision
+                    if (!(_correcte ?? false) && _deuxiemeChanceDispo) ...[
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFB45309),
+                            side: const BorderSide(color: Color(0xFFFFC107)),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _deuxiemeChanceDispo = false;
+                              _estDeuxiemeTentative = true;
+                              _repondu = false;
+                              _reponseChoisie = null;
+                              _correcte = null;
+                            });
+                          },
+                          child: const Text('🔄 Réessayer'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _passerQuestionSuivante,
+                        child: const Text('Suivant'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ],
@@ -327,6 +550,152 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 }
+
+// ─── Bonus barre ─────────────────────────────────────────────────────────────
+
+class _BonusBarre extends StatelessWidget {
+  final bool eliminationDispo;
+  final bool cinqCinquanteDispo;
+  final bool tempsDispo;
+  final bool deuxiemeChanceDispo;
+  final bool doubleXpActif;
+  final bool doublePiecesActif;
+  final VoidCallback? onElimination;
+  final VoidCallback? onCinqCinquante;
+  final VoidCallback? onTemps;
+  final VoidCallback onDoubleXp;
+  final VoidCallback onDoublePieces;
+
+  const _BonusBarre({
+    required this.eliminationDispo,
+    required this.cinqCinquanteDispo,
+    required this.tempsDispo,
+    required this.deuxiemeChanceDispo,
+    required this.doubleXpActif,
+    required this.doublePiecesActif,
+    required this.onElimination,
+    required this.onCinqCinquante,
+    required this.onTemps,
+    required this.onDoubleXp,
+    required this.onDoublePieces,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _BonusChip(
+              emoji: '🧹',
+              label: 'Éliminer',
+              disponible: eliminationDispo,
+              onTap: onElimination,
+            ),
+            const SizedBox(width: 8),
+            _BonusChip(
+              emoji: '✂️',
+              label: '50/50',
+              disponible: cinqCinquanteDispo,
+              onTap: onCinqCinquante,
+            ),
+            const SizedBox(width: 8),
+            _BonusChip(
+              emoji: '⏱️',
+              label: '+10s',
+              disponible: tempsDispo,
+              onTap: onTemps,
+            ),
+            const SizedBox(width: 8),
+            _BonusChip(
+              emoji: '🔄',
+              label: '2e chance',
+              disponible: deuxiemeChanceDispo,
+              onTap: null, // déclenchement automatique après erreur
+            ),
+            const SizedBox(width: 8),
+            _BonusChip(
+              emoji: '⭐',
+              label: '2× XP',
+              disponible: true,
+              actif: doubleXpActif,
+              onTap: onDoubleXp,
+            ),
+            const SizedBox(width: 8),
+            _BonusChip(
+              emoji: '🪙',
+              label: '2× 🪙',
+              disponible: true,
+              actif: doublePiecesActif,
+              onTap: onDoublePieces,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BonusChip extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final bool disponible;
+  final bool actif;
+  final VoidCallback? onTap;
+
+  const _BonusChip({
+    required this.emoji,
+    required this.label,
+    required this.disponible,
+    this.actif = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = disponible
+        ? EduCleColors.primary
+        : EduCleColors.textSecondary;
+    final bgColor = actif
+        ? EduCleColors.primary.withValues(alpha: 0.18)
+        : disponible
+            ? EduCleColors.primary.withValues(alpha: 0.08)
+            : EduCleColors.border.withValues(alpha: 0.5);
+
+    return GestureDetector(
+      onTap: disponible ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(20),
+          border: actif
+              ? Border.all(color: EduCleColors.primary, width: 1.2)
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 13)),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Widgets communs ─────────────────────────────────────────────────────────
 
 class _Badge extends StatelessWidget {
   final String texte;
