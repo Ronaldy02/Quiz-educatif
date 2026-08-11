@@ -298,6 +298,7 @@ class _QuizScreenState extends State<QuizScreen> {
           estPerfect: estPerfect,
           seriesPieces: _seriesPieces,
           realisationsDebloquees: realisationsDebloquees,
+          xpApres: xpPieces['xp'] ?? 0,
         ),
       ),
     );

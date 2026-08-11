@@ -7,6 +7,8 @@ import '../../models/parametre_partie.dart';
 import '../../models/realisation.dart';
 import '../../models/resultat.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/niveau.dart';
+import '../../widgets/niveau_up_overlay.dart';
 import '../../widgets/realisation_unlock_overlay.dart';
 import '../widgets/educle_logo.dart';
 import 'home_screen.dart';
@@ -30,6 +32,8 @@ class ResultatScreen extends StatefulWidget {
   final int seriesPieces;
   // Réalisations nouvellement débloquées pendant ce quiz.
   final List<Realisation> realisationsDebloquees;
+  // XP total du joueur après ce quiz (pour détecter la montée de niveau).
+  final int xpApres;
 
   const ResultatScreen({
     super.key,
@@ -45,6 +49,7 @@ class ResultatScreen extends StatefulWidget {
     this.estPerfect = false,
     this.seriesPieces = 0,
     this.realisationsDebloquees = const [],
+    this.xpApres = 0,
   });
 
   @override
@@ -54,11 +59,12 @@ class ResultatScreen extends StatefulWidget {
 class _ResultatScreenState extends State<ResultatScreen> {
   OverlayEntry? _overlayEntry;
   int _overlayIndex = 0;
+  bool _niveauUpMontre = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.realisationsDebloquees.isNotEmpty) {
+    if (widget.realisationsDebloquees.isNotEmpty || _doitMontrerNiveauUp()) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _montrerProchainOverlay());
     }
   }
@@ -69,24 +75,54 @@ class _ResultatScreenState extends State<ResultatScreen> {
     super.dispose();
   }
 
-  void _montrerProchainOverlay() {
-    if (_overlayIndex >= widget.realisationsDebloquees.length) return;
-    final r = widget.realisationsDebloquees[_overlayIndex];
+  bool _doitMontrerNiveauUp() {
+    if (widget.xpApres <= 0 || widget.xpGagne <= 0) return false;
+    final xpAvant = widget.xpApres - widget.xpGagne;
+    return NiveauHelper.niveauDepuisXp(widget.xpApres) >
+        NiveauHelper.niveauDepuisXp(xpAvant);
+  }
 
-    _overlayEntry = OverlayEntry(
-      builder: (_) => IgnorePointer(
-        child: RealisationUnlockOverlay(
-          realisation: r,
-          onDismissed: () {
-            _overlayEntry?.remove();
-            _overlayEntry = null;
-            _overlayIndex++;
-            if (mounted) _montrerProchainOverlay();
-          },
+  void _montrerProchainOverlay() {
+    // Phase 1 : réalisations débloquées
+    if (_overlayIndex < widget.realisationsDebloquees.length) {
+      final r = widget.realisationsDebloquees[_overlayIndex];
+      _overlayEntry = OverlayEntry(
+        builder: (_) => IgnorePointer(
+          child: RealisationUnlockOverlay(
+            realisation: r,
+            onDismissed: () {
+              _overlayEntry?.remove();
+              _overlayEntry = null;
+              _overlayIndex++;
+              if (mounted) _montrerProchainOverlay();
+            },
+          ),
         ),
-      ),
-    );
-    Overlay.of(context).insert(_overlayEntry!);
+      );
+      Overlay.of(context).insert(_overlayEntry!);
+      return;
+    }
+
+    // Phase 2 : montée de niveau (une seule fois)
+    if (!_niveauUpMontre && _doitMontrerNiveauUp()) {
+      _niveauUpMontre = true;
+      final xpAvant = widget.xpApres - widget.xpGagne;
+      _overlayEntry = OverlayEntry(
+        builder: (_) => IgnorePointer(
+          child: NiveauUpOverlay(
+            niveauAvant: NiveauHelper.niveauDepuisXp(xpAvant),
+            niveauApres: NiveauHelper.niveauDepuisXp(widget.xpApres),
+            xpAvant: xpAvant,
+            xpApres: widget.xpApres,
+            onDismissed: () {
+              _overlayEntry?.remove();
+              _overlayEntry = null;
+            },
+          ),
+        ),
+      );
+      Overlay.of(context).insert(_overlayEntry!);
+    }
   }
 
   String _messageSelonScore() {

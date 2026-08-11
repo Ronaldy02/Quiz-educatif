@@ -394,6 +394,8 @@ class _PortefeuilleCardState extends State<_PortefeuilleCard> {
     final progression = NiveauHelper.progressionNiveau(_xp);
     final xpDans = NiveauHelper.xpDansNiveauActuel(_xp);
     final xpNecessaire = NiveauHelper.xpPourNiveauSuivant(niveau);
+    final rang = NiveauHelper.rangDepuisNiveau(niveau);
+    final couleurRang = NiveauHelper.rangCouleur(rang);
 
     return _CarteReglage(
       child: Column(
@@ -424,7 +426,6 @@ class _PortefeuilleCardState extends State<_PortefeuilleCard> {
           Container(height: 1, color: EduCleColors.border),
           const SizedBox(height: 12),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Niveau $niveau',
@@ -434,6 +435,24 @@ class _PortefeuilleCardState extends State<_PortefeuilleCard> {
                   color: EduCleColors.textSecondary,
                 ),
               ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: couleurRang.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: couleurRang.withValues(alpha: 0.30)),
+                ),
+                child: Text(
+                  '${NiveauHelper.rangEmoji(rang)} ${NiveauHelper.rangNom(rang)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: couleurRang,
+                  ),
+                ),
+              ),
+              const Spacer(),
               Text(
                 '$xpDans / $xpNecessaire XP',
                 style: const TextStyle(

@@ -1,4 +1,17 @@
 import 'dart:math';
+import 'package:flutter/material.dart';
+
+/// Huit rangs débloqués aux niveaux 1 / 5 / 10 / 20 / 30 / 50 / 75 / 100.
+enum Rang {
+  debutant,    // niveau  1
+  apprenti,    // niveau  5
+  explorateur, // niveau 10
+  confirme,    // niveau 20
+  avance,      // niveau 30
+  expert,      // niveau 50
+  maitre,      // niveau 75
+  grandMaitre, // niveau 100
+}
 
 /// Utilitaires pour le systeme de niveaux du joueur.
 ///
@@ -39,5 +52,46 @@ class NiveauHelper {
     final xpNecessaire = xpPourNiveauSuivant(n);
     if (xpNecessaire == 0) return 1.0;
     return (xpDans / xpNecessaire).clamp(0.0, 1.0);
+  }
+
+  /// Rang correspondant au [niveau] donné.
+  static Rang rangDepuisNiveau(int niveau) {
+    if (niveau >= 100) return Rang.grandMaitre;
+    if (niveau >= 75)  return Rang.maitre;
+    if (niveau >= 50)  return Rang.expert;
+    if (niveau >= 30)  return Rang.avance;
+    if (niveau >= 20)  return Rang.confirme;
+    if (niveau >= 10)  return Rang.explorateur;
+    if (niveau >= 5)   return Rang.apprenti;
+    return Rang.debutant;
+  }
+
+  /// Emoji associé au rang.
+  static String rangEmoji(Rang r) {
+    const emojis = ['🌱', '📘', '🔎', '🧠', '🎓', '🏆', '💎', '👑'];
+    return emojis[r.index];
+  }
+
+  /// Libellé français du rang.
+  static String rangNom(Rang r) {
+    const noms = [
+      'Débutant', 'Apprenti', 'Explorateur', 'Confirmé',
+      'Avancé', 'Expert', 'Maître', 'Grand Maître',
+    ];
+    return noms[r.index];
+  }
+
+  /// Couleur associée au rang.
+  static Color rangCouleur(Rang r) {
+    switch (r) {
+      case Rang.debutant:    return const Color(0xFF6B7280);
+      case Rang.apprenti:    return const Color(0xFF2563EB);
+      case Rang.explorateur: return const Color(0xFF0891B2);
+      case Rang.confirme:    return const Color(0xFF059669);
+      case Rang.avance:      return const Color(0xFF7C3AED);
+      case Rang.expert:      return const Color(0xFFB45309);
+      case Rang.maitre:      return const Color(0xFF0284C7);
+      case Rang.grandMaitre: return const Color(0xFFDC2626);
+    }
   }
 }
