@@ -273,11 +273,18 @@ class QuizController extends ChangeNotifier {
       nbVoulu: nbVoulu,
     );
 
+    // Snapshot de maitrise avant le quiz, utilise pour calculer l'XP par question.
+    final maitriseAvant = {
+      for (final q in questions)
+        q.id: stats[q.id]?.tauxReussite ?? 0.0,
+    };
+
     final quiz = Quiz(
       id: DateTime.now().millisecondsSinceEpoch,
       chapitre: chapitre,
       mode: mode,
       questions: questions,
+      maitriseAvant: maitriseAvant,
     );
     quiz.demarrer();
     utilisateur.quizEnCours = quiz;

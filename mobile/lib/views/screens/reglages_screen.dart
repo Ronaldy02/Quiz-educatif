@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../controllers/quiz_controller.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/niveau.dart';
 import '../widgets/educle_app_bar.dart';
 import 'admin_screen.dart';
 
@@ -389,24 +390,67 @@ class _PortefeuilleCardState extends State<_PortefeuilleCard> {
         child: Center(child: SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))),
       );
     }
+    final niveau = NiveauHelper.niveauDepuisXp(_xp);
+    final progression = NiveauHelper.progressionNiveau(_xp);
+    final xpDans = NiveauHelper.xpDansNiveauActuel(_xp);
+    final xpNecessaire = NiveauHelper.xpPourNiveauSuivant(niveau);
+
     return _CarteReglage(
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: _StatPortefeuille(
-              emoji: '⭐',
-              label: 'XP total',
-              valeur: _xp,
-              couleur: const Color(0xFFB45309),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: _StatPortefeuille(
+                  emoji: '⭐',
+                  label: 'XP total',
+                  valeur: _xp,
+                  couleur: const Color(0xFFB45309),
+                ),
+              ),
+              Container(width: 1, height: 48, color: EduCleColors.border),
+              Expanded(
+                child: _StatPortefeuille(
+                  emoji: '🪙',
+                  label: 'Pièces',
+                  valeur: _pieces,
+                  couleur: const Color(0xFF0284C7),
+                ),
+              ),
+            ],
           ),
-          Container(width: 1, height: 48, color: EduCleColors.border),
-          Expanded(
-            child: _StatPortefeuille(
-              emoji: '🪙',
-              label: 'Pièces',
-              valeur: _pieces,
-              couleur: const Color(0xFF0284C7),
+          const SizedBox(height: 14),
+          Container(height: 1, color: EduCleColors.border),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Niveau $niveau',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: EduCleColors.textSecondary,
+                ),
+              ),
+              Text(
+                '$xpDans / $xpNecessaire XP',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: EduCleColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progression,
+              minHeight: 8,
+              backgroundColor: EduCleColors.border,
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFB45309)),
             ),
           ),
         ],

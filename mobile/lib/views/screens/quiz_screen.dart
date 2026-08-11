@@ -189,7 +189,7 @@ class _QuizScreenState extends State<QuizScreen> {
 
     // Pièces = floor(score_effectif / 10), doublées si bonus actif
     final piecesGagnees = (resultat.score / 10).floor() * (_doublePiecesActif ? 2 : 1);
-    final xpGagne = resultat.reponsesCorrectes.length * 10 * (_doubleXpActif ? 2 : 1);
+    final xpGagne = (resultat.xpQuiz * (_doubleXpActif ? 2.0 : 1.0)).round();
     if (xpGagne > 0 || piecesGagnees > 0) {
       await controller.ajouterXpPieces(xpGagne, piecesGagnees);
     }

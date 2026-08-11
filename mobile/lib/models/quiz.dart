@@ -20,6 +20,13 @@ class Quiz {
   bool termine;
   bool multiplicateurScoreActif; // bonus 🎯 ×1.5 score
 
+  // Maitrise de chaque question AVANT ce quiz (snapshot au lancement).
+  // Utilise pour calculer l'XP per-question selon la spec.
+  Map<int, double> maitriseAvant;
+
+  // XP cumule pendant le quiz (avant bonus Double XP).
+  double xpAccumule;
+
   Quiz({
     required this.id,
     required this.chapitre,
@@ -33,10 +40,13 @@ class Quiz {
     List<ReponseEnregistree>? historique,
     this.termine = false,
     this.multiplicateurScoreActif = false,
+    Map<int, double>? maitriseAvant,
+    this.xpAccumule = 0.0,
   }) : tempsRestant = tempsRestant ?? mode.dureeTotale ?? mode.tempsParQuestion,
        reponsesCorrectes = reponsesCorrectes ?? [],
        reponsesIncorrectes = reponsesIncorrectes ?? [],
-       historique = historique ?? [];
+       historique = historique ?? [],
+       maitriseAvant = maitriseAvant ?? {};
 
   Question? get questionCourante =>
       indexCourant < questions.length ? questions[indexCourant] : null;
@@ -45,8 +55,10 @@ class Quiz {
   void demarrer() {
     indexCourant = 0;
     score = 0;
+    xpAccumule = 0.0;
     reponsesCorrectes.clear();
     reponsesIncorrectes.clear();
+    historique.clear();
     termine = false;
     tempsRestant = mode.dureeTotale ?? mode.tempsParQuestion;
   }
@@ -81,6 +93,19 @@ class Quiz {
     } else {
       reponsesIncorrectes.add(question);
     }
+
+    // ── XP par question (spec §1.1–1.2) ──────────────────────────────────
+    // XP = (2 + 8 × (1 − maitrise_avant)) × facteur_reussite
+    // facteur : 1.0 correct sans aide | 0.75 avec aide | 0.0 incorrect
+    final double maitriseQ = maitriseAvant[question.id] ?? 0.0;
+    final double facteur;
+    if (correcte) {
+      facteur = bonusUtilise == 'second_chance' ? 0.75 : 1.0;
+    } else {
+      facteur = 0.0;
+    }
+    xpAccumule += (2.0 + 8.0 * (1.0 - maitriseQ)) * facteur;
+
     historique.add(
       ReponseEnregistree(
         question: question,
@@ -127,7 +152,8 @@ class Quiz {
     final scoreEffectif = multiplicateurScoreActif ? (score * 1.5).round() : score;
     return Resultat(
       score: scoreEffectif,
-      scoreBase: score,
+      scoreBase: multiplicateurScoreActif ? score : null,
+      xpQuiz: xpAccumule,
       total: questions.length,
       reponsesCorrectes: reponsesCorrectes,
       reponsesIncorrectes: reponsesIncorrectes,

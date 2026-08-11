@@ -30,7 +30,7 @@ class DatabaseHelper {
     final path = kIsWeb ? 'quiz_educatif.db' : join(await getDatabasesPath(), 'quiz_educatif.db');
     return openDatabase(
       path,
-      version: 13,
+      version: 14,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -120,6 +120,20 @@ class DatabaseHelper {
         );
       } catch (_) {}
     }
+    if (oldVersion < 14) {
+      // Migre nb_correcte vers REAL (maîtrise pondérée 0.0/0.75/1.0).
+      // Recrée la table proprement et réinitialise l'historique.
+      await db.execute('DROP TABLE IF EXISTS statistiques_questions');
+      await db.execute('''
+        CREATE TABLE statistiques_questions (
+          question_id INTEGER PRIMARY KEY,
+          nb_affichee INTEGER NOT NULL DEFAULT 0,
+          nb_correcte REAL NOT NULL DEFAULT 0.0,
+          historique TEXT NOT NULL DEFAULT '[]',
+          last_attempt_at TEXT
+        )
+      ''');
+    }
   }
 
   Future<void> _reseedAll(Database db) async {
@@ -201,7 +215,7 @@ class DatabaseHelper {
       CREATE TABLE IF NOT EXISTS statistiques_questions (
         question_id INTEGER PRIMARY KEY,
         nb_affichee INTEGER NOT NULL DEFAULT 0,
-        nb_correcte INTEGER NOT NULL DEFAULT 0,
+        nb_correcte REAL NOT NULL DEFAULT 0.0,
         historique TEXT NOT NULL DEFAULT '[]',
         last_attempt_at TEXT
       )
@@ -387,23 +401,33 @@ class DatabaseHelper {
         whereArgs: [reponse.question.id],
       );
 
-      // Récupère la fenêtre courante (JSON array de 0/1).
-      List<int> fenetre = [];
+      // Récupère la fenêtre courante (JSON array de valeurs 0.0/0.75/1.0).
+      List<double> fenetre = [];
       if (existing.isNotEmpty) {
         final raw = existing.first['historique'] as String?;
         if (raw != null && raw.isNotEmpty) {
           try {
-            fenetre = List<int>.from(jsonDecode(raw) as List);
+            fenetre = (jsonDecode(raw) as List)
+                .map((v) => (v as num).toDouble())
+                .toList();
           } catch (_) {}
         }
       }
 
-      // Ajoute la nouvelle tentative et limite à 10.
-      fenetre.add(reponse.correcte ? 1 : 0);
+      // Valeur pondérée : 1.0 correct | 0.75 deuxième chance | 0.0 incorrect.
+      final double valeur;
+      if (!reponse.correcte) {
+        valeur = 0.0;
+      } else if (reponse.bonusUtilise == 'second_chance') {
+        valeur = 0.75;
+      } else {
+        valeur = 1.0;
+      }
+      fenetre.add(valeur);
       if (fenetre.length > 10) fenetre = fenetre.sublist(fenetre.length - 10);
 
       final nbAff = fenetre.length;
-      final nbCorr = fenetre.fold(0, (s, v) => s + v);
+      final double nbCorr = fenetre.fold(0.0, (s, v) => s + v);
 
       final maintenant = DateTime.now().toIso8601String();
       if (existing.isEmpty) {
@@ -569,7 +593,7 @@ class DatabaseHelper {
         qid,
         QuestionStats(
           nbAffichee: row['nb_affichee'] as int,
-          nbCorrecte: row['nb_correcte'] as int,
+          nbCorrecte: (row['nb_correcte'] as num).toDouble(),
           derniereTentative:
               lastAtStr != null ? DateTime.tryParse(lastAtStr) : null,
         ),

@@ -5,7 +5,9 @@ import '../models/question.dart';
 /// Statistiques de maitrise d'une question (fenetre glissante de 10 tentatives).
 class QuestionStats {
   final int nbAffichee;
-  final int nbCorrecte;
+  // Somme ponderee des valeurs de reussite (1.0 / 0.75 / 0.0).
+  // Peut etre fractionnaire (ex. 7.5 sur 10 tentatives).
+  final double nbCorrecte;
   final DateTime? derniereTentative;
 
   const QuestionStats({
