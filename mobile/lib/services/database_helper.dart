@@ -30,7 +30,7 @@ class DatabaseHelper {
     final path = kIsWeb ? 'quiz_educatif.db' : join(await getDatabasesPath(), 'quiz_educatif.db');
     return openDatabase(
       path,
-      version: 14,
+      version: 15,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -122,7 +122,6 @@ class DatabaseHelper {
     }
     if (oldVersion < 14) {
       // Migre nb_correcte vers REAL (maîtrise pondérée 0.0/0.75/1.0).
-      // Recrée la table proprement et réinitialise l'historique.
       await db.execute('DROP TABLE IF EXISTS statistiques_questions');
       await db.execute('''
         CREATE TABLE statistiques_questions (
@@ -131,6 +130,20 @@ class DatabaseHelper {
           nb_correcte REAL NOT NULL DEFAULT 0.0,
           historique TEXT NOT NULL DEFAULT '[]',
           last_attempt_at TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 15) {
+      // Remplace last_attempt_at par last_correct_at (spec §15) :
+      // l'ancienneté se base sur la dernière BONNE réponse, pas la dernière tentative.
+      await db.execute('DROP TABLE IF EXISTS statistiques_questions');
+      await db.execute('''
+        CREATE TABLE statistiques_questions (
+          question_id INTEGER PRIMARY KEY,
+          nb_affichee INTEGER NOT NULL DEFAULT 0,
+          nb_correcte REAL NOT NULL DEFAULT 0.0,
+          historique TEXT NOT NULL DEFAULT '[]',
+          last_correct_at TEXT
         )
       ''');
     }
@@ -217,7 +230,7 @@ class DatabaseHelper {
         nb_affichee INTEGER NOT NULL DEFAULT 0,
         nb_correcte REAL NOT NULL DEFAULT 0.0,
         historique TEXT NOT NULL DEFAULT '[]',
-        last_attempt_at TEXT
+        last_correct_at TEXT
       )
     ''');
     await db.execute('''
@@ -429,24 +442,25 @@ class DatabaseHelper {
       final nbAff = fenetre.length;
       final double nbCorr = fenetre.fold(0.0, (s, v) => s + v);
 
-      final maintenant = DateTime.now().toIso8601String();
+      // last_correct_at : mise à jour uniquement si la réponse est correcte (spec §15).
+      final Map<String, dynamic> data = {
+        'nb_affichee': nbAff,
+        'nb_correcte': nbCorr,
+        'historique': jsonEncode(fenetre),
+      };
+      if (reponse.correcte) {
+        data['last_correct_at'] = DateTime.now().toIso8601String();
+      }
+
       if (existing.isEmpty) {
         await db.insert('statistiques_questions', {
           'question_id': reponse.question.id,
-          'nb_affichee': nbAff,
-          'nb_correcte': nbCorr,
-          'historique': jsonEncode(fenetre),
-          'last_attempt_at': maintenant,
+          ...data,
         });
       } else {
         await db.update(
           'statistiques_questions',
-          {
-            'nb_affichee': nbAff,
-            'nb_correcte': nbCorr,
-            'historique': jsonEncode(fenetre),
-            'last_attempt_at': maintenant,
-          },
+          data,
           where: 'question_id = ?',
           whereArgs: [reponse.question.id],
         );
@@ -581,21 +595,21 @@ class DatabaseHelper {
     final db = await database;
     final placeholders = List.filled(ids.length, '?').join(',');
     final rows = await db.rawQuery(
-      'SELECT question_id, nb_affichee, nb_correcte, last_attempt_at '
+      'SELECT question_id, nb_affichee, nb_correcte, last_correct_at '
       'FROM statistiques_questions '
       'WHERE question_id IN ($placeholders)',
       ids,
     );
     return Map.fromEntries(rows.map((row) {
       final qid = row['question_id'] as int;
-      final lastAtStr = row['last_attempt_at'] as String?;
+      final lastCorrectStr = row['last_correct_at'] as String?;
       return MapEntry(
         qid,
         QuestionStats(
           nbAffichee: row['nb_affichee'] as int,
           nbCorrecte: (row['nb_correcte'] as num).toDouble(),
-          derniereTentative:
-              lastAtStr != null ? DateTime.tryParse(lastAtStr) : null,
+          derniereBonneReponse:
+              lastCorrectStr != null ? DateTime.tryParse(lastCorrectStr) : null,
         ),
       );
     }));
