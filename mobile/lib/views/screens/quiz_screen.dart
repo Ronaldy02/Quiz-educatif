@@ -7,7 +7,10 @@ import 'package:provider/provider.dart';
 import '../../controllers/quiz_controller.dart';
 import '../../models/parametre_partie.dart';
 import '../../models/quiz.dart';
+import '../../services/haptic_service.dart';
+import '../../services/sound_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/milestone_overlay.dart';
 import 'resultat_screen.dart';
 
 // ─── Prix des bonus (en pièces) ──────────────────────────────────────────────
@@ -52,6 +55,13 @@ class _QuizScreenState extends State<QuizScreen> {
   // État deuxième chance
   bool _enDeuxiemeChance = false;
   bool _estDeuxiemeTentative = false;
+
+  // Série (Rush/Révision uniquement — spec §18 résumé)
+  int _serie = 0;
+  final Set<int> _paliersSerie = {};
+  bool _questionsCorrecteCourante = false;
+  int _seriesPieces = 0; // total coins reçus pendant le quiz (jalons de série)
+  OverlayEntry? _overlayEntry;
 
   @override
   void initState() {
@@ -110,7 +120,15 @@ class _QuizScreenState extends State<QuizScreen> {
         quiz, question, reponse ?? '', 0,
         bonusUtilise: 'second_chance',
       );
-      if (correcte) quiz.retirerDerniereErreur(question);
+      if (correcte) {
+        quiz.retirerDerniereErreur(question);
+        _questionsCorrecteCourante = true;
+        unawaited(HapticService.reponseCorrecte());
+        unawaited(SoundService.reponseCorrecte());
+      } else {
+        unawaited(HapticService.reponseIncorrecte());
+        unawaited(SoundService.reponseIncorrecte());
+      }
       _estDeuxiemeTentative = false;
       if (widget.mode.feedbackImmediat) {
         setState(() {
@@ -126,6 +144,15 @@ class _QuizScreenState extends State<QuizScreen> {
 
     final tempsRestantAuClic = quiz.tempsRestant;
     final correcte = controller.repondre(quiz, question, reponse ?? '', tempsRestantAuClic);
+
+    if (correcte) {
+      _questionsCorrecteCourante = true;
+      unawaited(HapticService.reponseCorrecte());
+      unawaited(SoundService.reponseCorrecte());
+    } else if (reponse != null) {
+      unawaited(HapticService.reponseIncorrecte());
+      unawaited(SoundService.reponseIncorrecte());
+    }
 
     if (widget.mode.feedbackImmediat) {
       setState(() {
@@ -168,6 +195,18 @@ class _QuizScreenState extends State<QuizScreen> {
   void _passerQuestionSuivante() {
     final controller = context.read<QuizController>();
     final quiz = widget.quiz;
+    final estBombardement = widget.mode.dureeTotale != null;
+
+    // Mise à jour de la série avant de réinitialiser l'état de la question.
+    if (!estBombardement) {
+      if (_questionsCorrecteCourante) {
+        _serie++;
+        unawaited(_verifierMilestoneSerie());
+      } else {
+        _serie = 0;
+      }
+    }
+
     controller.questionSuivante(quiz);
     _melangerChoix();
     setState(() {
@@ -176,6 +215,7 @@ class _QuizScreenState extends State<QuizScreen> {
       _correcte = null;
       _enDeuxiemeChance = false;
       _estDeuxiemeTentative = false;
+      _questionsCorrecteCourante = false;
     });
     if (quiz.termine) _finir();
   }
@@ -187,11 +227,38 @@ class _QuizScreenState extends State<QuizScreen> {
     final controller = context.read<QuizController>();
     final resultat = await controller.terminerQuiz(widget.quiz);
 
-    // Pièces = floor(score_effectif / 10), doublées si bonus actif
-    final piecesGagnees = (resultat.score / 10).floor() * (_doublePiecesActif ? 2 : 1);
+    final estBombardement = widget.mode.dureeTotale != null;
+
+    // Pièces de fin de quiz (spec §13 et §18 résumé).
+    // Bombardement : tier basé sur le nombre de bonnes réponses.
+    // Rush/Révision : formule score ÷ 10.
+    final int palierBombardement;
+    final int piecesGagnees;
+    if (estBombardement) {
+      palierBombardement = _palierBombardement(resultat.reponsesCorrectes.length);
+      final piecesBrutes = _piecesPalierBombardement(palierBombardement);
+      piecesGagnees = piecesBrutes * (_doublePiecesActif ? 2 : 1);
+      if (palierBombardement > 0) {
+        unawaited(SoundService.bombardement(palierBombardement));
+        unawaited(HapticService.serie(palierBombardement));
+      }
+    } else {
+      palierBombardement = 0;
+      piecesGagnees = (resultat.score / 10).floor() * (_doublePiecesActif ? 2 : 1);
+    }
+
     final xpGagne = (resultat.xpQuiz * (_doubleXpActif ? 2.0 : 1.0)).round();
     if (xpGagne > 0 || piecesGagnees > 0) {
       await controller.ajouterXpPieces(xpGagne, piecesGagnees);
+    }
+
+    // Perfect quiz : toutes les réponses correctes (spec §7).
+    final estPerfect = !estBombardement &&
+        resultat.total > 0 &&
+        resultat.reponsesCorrectes.length == resultat.total;
+    if (estPerfect) {
+      unawaited(HapticService.perfect());
+      unawaited(SoundService.perfect());
     }
 
     if (!mounted) return;
@@ -206,6 +273,9 @@ class _QuizScreenState extends State<QuizScreen> {
           doubleXpActif: _doubleXpActif,
           doublePiecesActif: _doublePiecesActif,
           multiplicateurActif: _multiplicateurActif,
+          palierBombardement: palierBombardement,
+          estPerfect: estPerfect,
+          seriesPieces: _seriesPieces,
         ),
       ),
     );
@@ -320,7 +390,72 @@ class _QuizScreenState extends State<QuizScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _overlayEntry?.remove();
     super.dispose();
+  }
+
+  // ─── Jalons de série ──────────────────────────────────────────────────────
+
+  static int _palierBombardement(int nbCorrectes) {
+    if (nbCorrectes >= 20) return 20;
+    if (nbCorrectes >= 15) return 15;
+    if (nbCorrectes >= 10) return 10;
+    if (nbCorrectes >= 6) return 6;
+    return 0;
+  }
+
+  static int _piecesPalierBombardement(int palier) {
+    switch (palier) {
+      case 6:  return 5;
+      case 10: return 12;
+      case 15: return 18;
+      case 20: return 25;
+      default: return 0;
+    }
+  }
+
+  static int _coinsSerieParPalier(int palier) {
+    switch (palier) {
+      case 5:  return 5;
+      case 10: return 10;
+      case 15: return 18;
+      case 20: return 25;
+      default: return 0;
+    }
+  }
+
+  void _mostrerOverlay(int palier, {bool estBombardement = false}) {
+    _overlayEntry?.remove();
+    _overlayEntry = OverlayEntry(
+      builder: (_) => IgnorePointer(
+        child: MilestoneOverlay(
+          palier: palier,
+          estBombardement: estBombardement,
+          onDismissed: () {
+            _overlayEntry?.remove();
+            _overlayEntry = null;
+          },
+        ),
+      ),
+    );
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  Future<void> _verifierMilestoneSerie() async {
+    const paliers = [5, 10, 15, 20];
+    for (final palier in paliers) {
+      if (_serie == palier && !_paliersSerie.contains(palier)) {
+        _paliersSerie.add(palier);
+        final coins = _coinsSerieParPalier(palier);
+        _seriesPieces += coins;
+        if (mounted) setState(() => _piecesDisponibles += coins);
+        await context.read<QuizController>().ajouterXpPieces(0, coins);
+        unawaited(HapticService.serie(palier));
+        unawaited(SoundService.serie(palier));
+        if (mounted) _mostrerOverlay(palier);
+        break;
+      }
+    }
   }
 
   @override
@@ -421,6 +556,15 @@ class _QuizScreenState extends State<QuizScreen> {
                           color: EduCleColors.textSecondary,
                         ),
                       ),
+                      if (_serie >= 2 && widget.mode.dureeTotale == null)
+                        Text(
+                          '🔥 $_serie',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFEA580C),
+                          ),
+                        ),
                     ],
                   ),
                 ],

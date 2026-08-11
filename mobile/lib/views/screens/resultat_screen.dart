@@ -20,6 +20,12 @@ class ResultatScreen extends StatelessWidget {
   final bool doubleXpActif;
   final bool doublePiecesActif;
   final bool multiplicateurActif;
+  // Palier atteint en Bombardement : 6, 10, 15, 20, ou 0 si aucun (spec §9-12).
+  final int palierBombardement;
+  // Vrai si toutes les réponses sont correctes hors Bombardement (spec §7).
+  final bool estPerfect;
+  // Total des pièces reçues via les jalons de série pendant le quiz (spec §3-6).
+  final int seriesPieces;
 
   const ResultatScreen({
     super.key,
@@ -31,9 +37,13 @@ class ResultatScreen extends StatelessWidget {
     this.doubleXpActif = false,
     this.doublePiecesActif = false,
     this.multiplicateurActif = false,
+    this.palierBombardement = 0,
+    this.estPerfect = false,
+    this.seriesPieces = 0,
   });
 
   String _messageSelonScore() {
+    if (estPerfect) return 'Quiz parfait ! Toutes les réponses sont correctes.';
     if (mode?.nom == 'Bombardement') {
       final nb = resultat.historique.length;
       if (nb >= 10) return 'Incroyable, tu voles !';
@@ -126,6 +136,56 @@ class ResultatScreen extends StatelessWidget {
                 ),
               ),
             ),
+            // ─── Bannière Perfect Quiz ────────────────────────────────────
+            if (estPerfect) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7C3AED), Color(0xFFB45309)],
+                  ),
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: const Text(
+                  '💯 QUIZ PARFAIT !',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+            // ─── Palier Bombardement atteint ──────────────────────────────
+            if (palierBombardement > 0) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(color: const Color(0xFFF59E0B)),
+                ),
+                child: Text(
+                  palierBombardement >= 20
+                      ? '💥🏆 $palierBombardement bonnes réponses !'
+                      : palierBombardement >= 15
+                          ? '💥⚡ $palierBombardement bonnes réponses !'
+                          : '💥 $palierBombardement bonnes réponses !',
+                  style: TextStyle(
+                    color: palierBombardement >= 20
+                        ? const Color(0xFF7C3AED)
+                        : palierBombardement >= 15
+                            ? const Color(0xFFDC2626)
+                            : const Color(0xFFB45309),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             Text(
               _messageSelonScore(),
@@ -167,7 +227,7 @@ class ResultatScreen extends StatelessWidget {
               ),
             ],
             // ─── Récompenses XP / pièces ─────────────────────────────────
-            if (xpGagne > 0 || piecesGagnees > 0) ...[
+            if (xpGagne > 0 || piecesGagnees > 0 || seriesPieces > 0) ...[
               const SizedBox(height: 20),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -176,54 +236,86 @@ class ResultatScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: EduCleColors.border),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Column(
                   children: [
-                    if (xpGagne > 0) ...[
-                      Text(
-                        '⭐ +$xpGagne XP',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                          color: Color(0xFFB45309),
-                        ),
-                      ),
-                      if (doubleXpActif)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 4),
-                          child: Text(
-                            '×2',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (xpGagne > 0) ...[
+                          Text(
+                            '⭐ +$xpGagne XP',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
                               color: Color(0xFFB45309),
                             ),
                           ),
-                        ),
-                    ],
-                    if (xpGagne > 0 && piecesGagnees > 0)
-                      const SizedBox(width: 20),
-                    if (piecesGagnees > 0) ...[
-                      Text(
-                        '🪙 +$piecesGagnees',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                          color: Color(0xFF0284C7),
-                        ),
-                      ),
-                      if (doublePiecesActif)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 4),
-                          child: Text(
-                            '×2',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
+                          if (doubleXpActif)
+                            const Padding(
+                              padding: EdgeInsets.only(left: 4),
+                              child: Text(
+                                '×2',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFB45309),
+                                ),
+                              ),
+                            ),
+                        ],
+                        if (xpGagne > 0 && piecesGagnees > 0)
+                          const SizedBox(width: 20),
+                        if (piecesGagnees > 0) ...[
+                          Text(
+                            '🪙 +$piecesGagnees',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
                               color: Color(0xFF0284C7),
                             ),
                           ),
+                          if (doublePiecesActif)
+                            const Padding(
+                              padding: EdgeInsets.only(left: 4),
+                              child: Text(
+                                '×2',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF0284C7),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ],
+                    ),
+                    // Pièces bonus gagnées via les jalons de série
+                    if (seriesPieces > 0) ...[
+                      if (xpGagne > 0 || piecesGagnees > 0)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 6),
+                          child: Divider(height: 1, color: EduCleColors.border),
                         ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            '🔥 Jalons de série : ',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: EduCleColors.textSecondary,
+                            ),
+                          ),
+                          Text(
+                            '+$seriesPieces 🪙',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                              color: Color(0xFFEA580C),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ],
                 ),
