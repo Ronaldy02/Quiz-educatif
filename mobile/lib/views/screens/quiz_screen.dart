@@ -72,6 +72,11 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   late Animation<double> _shakeAnim;
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
+  late AnimationController _questionCtrl;
+  late Animation<double> _questionFade;
+  late Animation<Offset> _questionSlide;
+
+  bool _tempsEcoule = false;
 
   @override
   void initState() {
@@ -79,6 +84,15 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     _melangerChoix();
     _demarrerTimer();
     _chargerPortefeuille();
+    unawaited(SoundService.initialiser());
+    _questionCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    );
+    _questionFade  = CurvedAnimation(parent: _questionCtrl, curve: Curves.easeOut);
+    _questionSlide = Tween<Offset>(begin: const Offset(0.07, 0), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _questionCtrl, curve: Curves.easeOut));
+    _questionCtrl.forward();
     _shakeCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 480),
@@ -119,6 +133,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       final quiz = widget.quiz;
       if (quiz.tempsRestant > 0) {
         setState(() => quiz.tempsRestant--);
+        if (!_repondu && !_enDeuxiemeChance) {
+          unawaited(SoundService.jouerTick(quiz.tempsRestant));
+        }
         if (quiz.tempsRestant == 0) _surTempsEcoule();
       }
     });
@@ -133,6 +150,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       setState(() => _enDeuxiemeChance = false);
       _passerQuestionSuivante();
     } else if (!_repondu) {
+      _tempsEcoule = true;
+      unawaited(SoundService.jouerGong());
       _traiterReponse(null);
     }
   }
@@ -182,7 +201,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       _questionsCorrecteCourante = true;
       unawaited(HapticService.reponseCorrecte());
       unawaited(SoundService.reponseCorrecte());
-    } else if (reponse != null) {
+    } else if (reponse != null && !_tempsEcoule) {
       unawaited(HapticService.reponseIncorrecte());
       unawaited(SoundService.reponseIncorrecte());
     }
@@ -255,7 +274,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       _enDeuxiemeChance = false;
       _estDeuxiemeTentative = false;
       _questionsCorrecteCourante = false;
+      _tempsEcoule = false;
     });
+    _questionCtrl.forward(from: 0);
     if (quiz.termine) _finir();
   }
 
@@ -263,6 +284,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     if (_termine) return;
     _termine = true;
     _timer?.cancel();
+    unawaited(SoundService.stopTick());
     final controller = context.read<QuizController>();
     final resultat = await controller.terminerQuiz(widget.quiz);
 
@@ -358,6 +380,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       ),
     );
     if (quitter == true && mounted) {
+      unawaited(SoundService.stopTick());
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
   }
@@ -451,6 +474,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     _overlayEntry?.remove();
     _shakeCtrl.dispose();
     _pulseCtrl.dispose();
+    _questionCtrl.dispose();
     super.dispose();
   }
 
@@ -670,9 +694,15 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                 ],
               ),
               const SizedBox(height: 12),
-              Text(
-                question.enonce,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+              FadeTransition(
+                opacity: _questionFade,
+                child: SlideTransition(
+                  position: _questionSlide,
+                  child: Text(
+                    question.enonce,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                  ),
+                ),
               ),
               const SizedBox(height: 14),
               // ─── Choix ───────────────────────────────────────────────────

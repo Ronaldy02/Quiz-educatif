@@ -44,6 +44,9 @@ dependencies:
   # Gestion d'état (Controller -> View)
   provider: ^6.1.2
 
+  # Audio (sons de quiz générés synthétiquement)
+  audioplayers: ^6.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
